@@ -1,7 +1,15 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import "./Board.css";
 
-const board: Number[][] = [];
+//current block status
+type BlockStatus = {
+  blockIndex: number;
+  x: number;
+  y: number;
+  rotation: number;
+};
+//init board
+let board: number[][] = [];
 
 for (let y = -1; y < 21; y++) {
   board[y] = [];
@@ -12,6 +20,26 @@ for (let y = -1; y < 21; y++) {
   }
 }
 
+// erase full lines
+const eraseLine = () => {
+  console.log(board);
+  for (let y = 0; y < 20; y++) {
+    let removable = true;
+    for (let x = 0; x < 10; x++) {
+      if (board[y][x] === 0) removable = false;
+    }
+    if (removable) {
+      for (let j = y; j >= -1; j--) {
+        for (let x = 0; x < 10; x++) {
+          board[j][x] = j === -1 ? 0 : board[j - 1][x];
+        }
+        y--;
+      }
+      console.log(board);
+    }
+  }
+};
+//block shapes
 const blockShapes = [
   [0, []],
   [2, [-1, 0], [1, 0], [2, 0]], //tetris
@@ -23,33 +51,13 @@ const blockShapes = [
   [4, [-1, 0], [0, 1], [0, -1]], // T
 ];
 
-const clearLine = () => {
-  for (let y = 0; y < 20; y++) {
-    let removable: Boolean = true;
-    for (let x = 0; x < 10; x++) {
-      if (board[y][x] === 0) {
-        removable = false;
-        break;
-      }
-    }
-    if (removable) {
-      for (let j = y; j >= -1; j--) {
-        for (let x = 0; x < 10; x++) {
-          board[j][x] = j === -1 ? 0 : board[j - 1][x];
-        }
-      }
-    }
-  }
-};
-
+//check if the block can be placed at the specified position
 const putBlock = (
-  blockIndex: Number,
-  x: Number,
-  y: Number,
-  rotation: Number,
-  remove: Boolean = false,
-  action: Boolean = false
+  blockStatus: BlockStatus,
+  remove: boolean = false,
+  action: boolean = false
 ) => {
+  let { blockIndex, x, y, rotation } = blockStatus;
   const blockShape = [...blockShapes[blockIndex]];
   const rotateMax = blockShape.shift();
   blockShape.unshift([0, 0]);
@@ -69,53 +77,102 @@ const putBlock = (
     }
   }
   if (!action) {
-    putBlock(blockIndex, x, y, rotation, remove, true);
+    putBlock(blockStatus, remove, true);
   }
   return true;
 };
 
-const createBlock = () => {
-  clearLine();
-  let ci = Math.trunc(Math.random() * 7 + 1),
-    cr = Math.trunc(Math.random() * 4),
-    cx = 4,
-    cy = 0;
-  if (!putBlock(ci, cx, cy, cr)) {
-  }
-};
-
+//Generate board
 const createBoard = () => {
-  const list = [];
-  var edgeColor, bgColor;
-  for (let i = 0; i < 200; i++) {
+  return [...new Array(200)].map((_, i) => {
+    var edgeColor, bgColor;
     let v = board[Math.floor(i / 10)][i % 10];
-    edgeColor = v === 0 ? "#888" : `hsl(${((v - 1) / 7) * 360}deg, 100%, 50%)`;
+    edgeColor = v === 0 ? "#888" : `hsl(${((v - 1) / 7) * 360}deg, 100%, 70%)`;
     bgColor = v === 0 ? "#ccc" : `hsl(${((v - 1) / 7) * 360}deg, 100%, 50% )`;
-    if (v !== 0) console.log(bgColor);
-    list.push(
+    return (
       <div
         className="square"
         style={{ backgroundColor: bgColor, border: `4px ridge ${edgeColor}` }}
       ></div>
     );
+  });
+};
+
+//Check if the block can move to the specified direction
+const move = (dx: number, dy: number, dr: number, blockStatus: BlockStatus) => {
+  let { blockIndex: ci, x: cx, y: cy, rotation: cr } = blockStatus;
+  putBlock(blockStatus, true);
+  if (putBlock({ blockIndex: ci, x: cx + dx, y: cy + dy, rotation: cr + dr })) {
+    cx += dx;
+    cy += dy;
+    cr += dr;
+    return true;
+  } else {
+    putBlock(blockStatus);
+    return false;
   }
-  return list;
 };
 
 const Board = () => {
-  const [state, setState] = useState({
-    field: board,
-    isDroped: true,
-  });
-  if (state.isDroped) {
-    createBlock();
-    setState(() => ({
-      field: board,
-      isDroped: false,
-    }));
-  }
-  const list = createBoard();
-  return <React.Fragment>{list}</React.Fragment>;
+  const initBlock: BlockStatus = {
+    blockIndex: Math.trunc(Math.random() * 7 + 1),
+    x: 4,
+    y: 0,
+    rotation: Math.trunc(Math.random() * 4),
+  };
+  const [block, setBoard] = useState<BlockStatus>(initBlock);
+  const [gameOver, setGameOver] = useState<boolean>(false);
+  //Block fall down and if it can't fall down, generate a new block
+  useEffect(() => {
+    const blockFall = setInterval(() => {
+      if (move(0, 1, 0, block)) setBoard({ ...block, y: block.y + 1 });
+      else {
+        // erase full lines
+        eraseLine();
+        //check if the block can be placed at the initial position
+        if (putBlock(initBlock)) {
+          setBoard(initBlock);
+        } else if (!gameOver) {
+          // Game over and color the board red
+          board.forEach((row, y) => {
+            row.forEach((_, x) => {
+              if (board[y][x] !== 0) board[y][x] = 1;
+            });
+          });
+          // game over
+          setGameOver(true);
+        }
+      }
+    }, 500);
+    return () => clearInterval(blockFall);
+  }, [block]);
+
+  // Keyboard control
+  useEffect(() => {
+    const keyDown = (e: KeyboardEvent) => {
+      switch (e.key) {
+        case "ArrowLeft":
+          move(-1, 0, 0, block) ? setBoard({ ...block, x: block.x - 1 }) : null;
+          break;
+        case "ArrowRight":
+          move(1, 0, 0, block) ? setBoard({ ...block, x: block.x + 1 }) : null;
+          break;
+        case "ArrowUp":
+          move(0, 0, 1, block)
+            ? setBoard({ ...block, rotation: block.rotation + 1 })
+            : null;
+          break;
+        case "ArrowDown":
+          move(0, 1, 0, block) ? setBoard({ ...block, y: block.y + 1 }) : null;
+          break;
+      }
+    };
+    document.addEventListener("keydown", keyDown);
+    return () => document.removeEventListener("keydown", keyDown);
+  }, [block]);
+
+  //return board component
+  return <React.Fragment>{createBoard()}</React.Fragment>;
 };
 
 export default Board;
